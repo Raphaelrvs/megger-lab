@@ -67,7 +67,7 @@ header{background:var(--gray-800);border-bottom:4px solid var(--red);height:64px
 .bn{border-left-color:var(--blue)!important;} .bb{border-left-color:var(--yellow)!important;} .br{border-left-color:var(--orange)!important;} .bp{border-left-color:var(--purple)!important;} .bi{border-left-color:var(--teal)!important;} .bd{border-left-color:var(--green)!important;}
 .empty{color:var(--gray-600);font-size:0.72rem;text-align:center;padding:1.5rem 1rem;}
 .analysis-wrap{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
-.a-row{display:grid;gap:8px;} .a-row-3{grid-template-columns:1fr 1.4fr 1fr;} .a-row-2{grid-template-columns:1fr 1fr;}
+.a-row{display:grid;gap:8px;} .a-row-3{grid-template-columns:1fr 1.2fr 1.2fr 1fr;} .a-row-2{grid-template-columns:1fr 1fr;}
 .a-panel{background:var(--gray-800);border-radius:8px;padding:14px;border:1px solid var(--gray-700);}
 .a-title{font-size:0.6rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
 .rank-item{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
@@ -195,6 +195,7 @@ footer{height:26px;background:var(--gray-800);border-top:1px solid var(--gray-70
     <div class="a-row a-row-3">
       <div class="a-panel"><div class="a-title">Distribuição por status</div><div style="display:flex;align-items:center;gap:14px;"><div style="position:relative;width:120px;height:120px;flex-shrink:0;"><canvas id="donutChart"></canvas></div><div style="display:flex;flex-direction:column;gap:6px;" id="donutLegend"></div></div></div>
       <div class="a-panel"><div class="a-title">Ranking de clientes — equipamentos em aberto</div><div id="clientRanking"></div></div>
+      <div class="a-panel"><div class="a-title">Ranking de equipamentos — em aberto</div><div id="equipRanking"></div></div>
       <div class="a-panel"><div class="a-title">Tempo parado — faixas de atraso</div><div id="delayPanel"></div></div>
     </div>
     <div class="a-row a-row-2">
@@ -228,7 +229,7 @@ function ageInfo(d){var days=ageDays(d);if(days===0)return{t:'hoje',c:''};if(day
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function buildNameToCol(){var m={};for(var idx in LIST_MAP){LIST_MAP[idx].forEach(function(n){m[n.toLowerCase().trim()]=Number(idx);});}return m;}
 function extractCliente(desc){if(!desc)return'';var m=desc.match(/Cliente:\s*([^\n\r]+)/i);return m?m[1].trim():'';}
-function renderCards(cards,colIdx){var el=document.getElementById('col'+colIdx);if(!cards.length){el.innerHTML='<div class="empty">Nenhum item</div>';return;}el.innerHTML=cards.map(function(c){var a=ageInfo(c.dateLastActivity),cli=c.cliente?' · '+esc(c.cliente):'';return'<div class="card '+BCLS[colIdx]+'"><div class="card-l"><div class="card-name">'+esc(c.name)+'</div><div class="card-list">'+esc(c.listName||'')+cli+'</div></div><div class="card-age '+a.c+'">'+a.t+'</div></div>';}).join('');}
+function renderCards(cards,colIdx){var el=document.getElementById('col'+colIdx);if(!cards.length){el.innerHTML='<div class="empty">Nenhum item</div>';return;}el.innerHTML=cards.map(function(c){var a=ageInfo(c.dateLastActivity),meta=[c.modelo,c.cliente].filter(Boolean).join(' · ');return'<div class="card '+BCLS[colIdx]+'"><div class="card-l"><div class="card-name">'+esc(c.name)+'</div><div class="card-list">'+esc(c.listName||'')+(meta?' · '+esc(meta):'')+'</div></div><div class="card-age '+a.c+'">'+a.t+'</div></div>';}).join('');}
 function setSync(s,t){var d=document.getElementById('dot');d.className='dot'+(s==='err'?' err':s==='spin'?' spin':'');document.getElementById('syncTxt').textContent=t;}
 
 function checkCfg(){var c=cfg();if(!c.key||!c.token||!c.board){document.getElementById('cfgOverlay').classList.add('on');return false;}return true;}
@@ -239,14 +240,26 @@ async function fetchData(){
   setSync('spin','Atualizando…');
   try{
     var res=await Promise.all([
-      fetch(PROXY+'/1/boards/'+c.board+'/cards?fields=name,dateLastActivity,idList,desc&key='+c.key+'&token='+c.token),
-      fetch(PROXY+'/1/boards/'+c.board+'/lists?fields=name&key='+c.key+'&token='+c.token)
+      fetch(PROXY+'/1/boards/'+c.board+'/cards?fields=name,dateLastActivity,idList,desc&customFieldItems=true&key='+c.key+'&token='+c.token),
+      fetch(PROXY+'/1/boards/'+c.board+'/lists?fields=name&key='+c.key+'&token='+c.token),
+      fetch(PROXY+'/1/boards/'+c.board+'/customFields?key='+c.key+'&token='+c.token)
     ]);
-    if(!res[0].ok||!res[1].ok)throw new Error('HTTP '+res[0].status);
-    var cards=await res[0].json(),lists=await res[1].json();
+    if(!res[0].ok||!res[1].ok||!res[2].ok)throw new Error('HTTP '+res[0].status);
+    var cards=await res[0].json(),lists=await res[1].json(),customFields=await res[2].json();
     var lMap={};lists.forEach(function(l){lMap[l.id]=l.name;});
+    var clienteFieldId=null,modeloFieldId=null;
+    customFields.forEach(function(f){var n=f.name.toLowerCase().trim();if(n==='cliente')clienteFieldId=f.id;if(n==='modelo')modeloFieldId=f.id;});
     var nameToCol=buildNameToCol();
-    cards.forEach(function(c){c.listName=lMap[c.idList]||'';c.cliente=extractCliente(c.desc);});
+    cards.forEach(function(c){
+      c.listName=lMap[c.idList]||'';
+      c.cliente='';c.modelo='';
+      (c.customFieldItems||[]).forEach(function(item){
+        var val=item.value&&(item.value.text||item.value.number||'')||'';
+        if(item.idCustomField===clienteFieldId)c.cliente=String(val).trim();
+        if(item.idCustomField===modeloFieldId)c.modelo=String(val).trim();
+      });
+      if(!c.cliente)c.cliente=extractCliente(c.desc);
+    });
     var groups=[[],[],[],[],[],[]];
     cards.forEach(function(c){var idx=nameToCol[c.listName.toLowerCase().trim()];if(idx!==undefined)groups[idx].push(c);});
     ALL_CARDS=cards;
@@ -273,6 +286,10 @@ function renderAnalysis(){
   var maxC=sorted.length?sorted[0][1]:1;
   var medals=['🥇','🥈','🥉'],rankColors=['#F1C40F','#BDC3C7','#CD7F32'];
   document.getElementById('clientRanking').innerHTML=sorted.length?sorted.map(function(e,i){return'<div class="rank-item"><div class="rank-pos">'+(i<3?medals[i]:(i+1))+'</div><div class="rank-bar-wrap"><div class="rank-name">'+esc(e[0])+'</div><div class="rank-bar-bg"><div class="rank-bar-fill" style="width:'+Math.round(e[1]/maxC*100)+'%;background:'+(i<3?rankColors[i]:'var(--red)')+'"></div></div></div><div class="rank-count">'+e[1]+'</div></div>';}).join(''):'<div class="empty">Adicione "Cliente: NomeEmpresa" na descrição dos cards</div>';
+  var ec={};active.forEach(function(c){if(c.modelo&&c.modelo.trim()){var k=c.modelo.trim();ec[k]=(ec[k]||0)+1;}});
+  var sortedEquip=Object.entries(ec).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
+  var maxE=sortedEquip.length?sortedEquip[0][1]:1;
+  document.getElementById('equipRanking').innerHTML=sortedEquip.length?sortedEquip.map(function(e,i){return'<div class="rank-item"><div class="rank-pos">'+(i<3?medals[i]:(i+1))+'</div><div class="rank-bar-wrap"><div class="rank-name">'+esc(e[0])+'</div><div class="rank-bar-bg"><div class="rank-bar-fill" style="width:'+Math.round(e[1]/maxE*100)+'%;background:'+(i<3?rankColors[i]:'var(--blue)')+'"></div></div></div><div class="rank-count">'+e[1]+'</div></div>';}).join(''):'<div class="empty">Preencha o campo personalizado "Modelo" nos cards</div>';
   var top5=sorted.slice(0,5);
   if(barInst)barInst.destroy();
   barInst=new Chart(document.getElementById('barChart'),{type:'bar',data:{labels:top5.map(function(e){return e[0];}),datasets:[{data:top5.map(function(e){return e[1];}),backgroundColor:top5.map(function(_,i){return i<3?rankColors[i]:'#CC0000';}),borderRadius:3,borderSkipped:false}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#888',font:{size:10}},grid:{color:'#2E2E2E'}},y:{ticks:{color:'#C8C8C8',font:{size:10}},grid:{display:false}}}}});
