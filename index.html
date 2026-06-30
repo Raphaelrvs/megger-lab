@@ -226,10 +226,11 @@ function tick(){var n=new Date();document.getElementById('clock').textContent=n.
 setInterval(tick,1000);tick();
 function ageDays(d){if(!d)return 0;return Math.floor((Date.now()-new Date(d))/86400000);}
 function ageInfo(d){var days=ageDays(d);if(days===0)return{t:'hoje',c:''};if(days===1)return{t:'1 dia',c:''};if(days<=5)return{t:days+' dias',c:''};if(days<=14)return{t:days+' dias',c:'warn'};return{t:days+' dias',c:'old'};}
+function dateFromTrelloId(id){if(!id||id.length<8)return null;var ts=parseInt(id.substring(0,8),16);return new Date(ts*1000);}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function buildNameToCol(){var m={};for(var idx in LIST_MAP){LIST_MAP[idx].forEach(function(n){m[n.toLowerCase().trim()]=Number(idx);});}return m;}
 function extractCliente(desc){if(!desc)return'';var m=desc.match(/Cliente:\s*([^\n\r]+)/i);return m?m[1].trim():'';}
-function renderCards(cards,colIdx){var el=document.getElementById('col'+colIdx);if(!cards.length){el.innerHTML='<div class="empty">Nenhum item</div>';return;}el.innerHTML=cards.map(function(c){var a=ageInfo(c.dateLastActivity),meta=[c.modelo,c.cliente].filter(Boolean).join(' · ');return'<div class="card '+BCLS[colIdx]+'"><div class="card-l"><div class="card-name">'+esc(c.name)+'</div><div class="card-list">'+esc(c.listName||'')+(meta?' · '+esc(meta):'')+'</div></div><div class="card-age '+a.c+'">'+a.t+'</div></div>';}).join('');}
+function renderCards(cards,colIdx){var el=document.getElementById('col'+colIdx);if(!cards.length){el.innerHTML='<div class="empty">Nenhum item</div>';return;}el.innerHTML=cards.map(function(c){var a=ageInfo(c.dateCreated),meta=[c.modelo,c.cliente].filter(Boolean).join(' · ');return'<div class="card '+BCLS[colIdx]+'"><div class="card-l"><div class="card-name">'+esc(c.name)+'</div><div class="card-list">'+esc(c.listName||'')+(meta?' · '+esc(meta):'')+'</div></div><div class="card-age '+a.c+'">'+a.t+'</div></div>';}).join('');}
 function setSync(s,t){var d=document.getElementById('dot');d.className='dot'+(s==='err'?' err':s==='spin'?' spin':'');document.getElementById('syncTxt').textContent=t;}
 
 function checkCfg(){var c=cfg();if(!c.key||!c.token||!c.board){document.getElementById('cfgOverlay').classList.add('on');return false;}return true;}
@@ -240,7 +241,7 @@ async function fetchData(){
   setSync('spin','Atualizando…');
   try{
     var res=await Promise.all([
-      fetch(PROXY+'/1/boards/'+c.board+'/cards?fields=name,dateLastActivity,idList,desc&customFieldItems=true&key='+c.key+'&token='+c.token),
+      fetch(PROXY+'/1/boards/'+c.board+'/cards?fields=id,name,dateLastActivity,idList,desc&customFieldItems=true&key='+c.key+'&token='+c.token),
       fetch(PROXY+'/1/boards/'+c.board+'/lists?fields=name&key='+c.key+'&token='+c.token),
       fetch(PROXY+'/1/boards/'+c.board+'/customFields?key='+c.key+'&token='+c.token)
     ]);
@@ -252,6 +253,7 @@ async function fetchData(){
     var nameToCol=buildNameToCol();
     cards.forEach(function(c){
       c.listName=lMap[c.idList]||'';
+      c.dateCreated=dateFromTrelloId(c.id);
       c.cliente='';c.modelo='';
       (c.customFieldItems||[]).forEach(function(item){
         var val=item.value&&(item.value.text||item.value.number||'')||'';
@@ -293,8 +295,8 @@ function renderAnalysis(){
   var top5=sorted.slice(0,5);
   if(barInst)barInst.destroy();
   barInst=new Chart(document.getElementById('barChart'),{type:'bar',data:{labels:top5.map(function(e){return e[0];}),datasets:[{data:top5.map(function(e){return e[1];}),backgroundColor:top5.map(function(_,i){return i<3?rankColors[i]:'#CC0000';}),borderRadius:3,borderSkipped:false}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#888',font:{size:10}},grid:{color:'#2E2E2E'}},y:{ticks:{color:'#C8C8C8',font:{size:10}},grid:{display:false}}}}});
-  var dl=[0,0,0,0];active.forEach(function(c){var d=ageDays(c.dateLastActivity);if(d===0)dl[0]++;else if(d<=7)dl[1]++;else if(d<=14)dl[2]++;else dl[3]++;});
-  var tot=active.length||1,avg=active.length?Math.round(active.reduce(function(s,c){return s+ageDays(c.dateLastActivity);},0)/active.length):0;
+  var dl=[0,0,0,0];active.forEach(function(c){var d=ageDays(c.dateCreated);if(d===0)dl[0]++;else if(d<=7)dl[1]++;else if(d<=14)dl[2]++;else dl[3]++;});
+  var tot=active.length||1,avg=active.length?Math.round(active.reduce(function(s,c){return s+ageDays(c.dateCreated);},0)/active.length):0;
   var defs=[{lbl:'Hoje',count:dl[0],color:'#27AE60'},{lbl:'1 a 7 dias',count:dl[1],color:'#27AE60'},{lbl:'8 a 14 dias',count:dl[2],color:'#E6AC00'},{lbl:'Mais de 14 dias',count:dl[3],color:'#E60000'}];
   document.getElementById('delayPanel').innerHTML=defs.map(function(d){return'<div class="delay-item"><div class="delay-label"><span class="delay-txt">'+d.lbl+'</span><span class="delay-count" style="color:'+d.color+'">'+d.count+'</span></div><div class="delay-bg"><div class="delay-fill" style="width:'+Math.round(d.count/tot*100)+'%;background:'+d.color+'"></div></div></div>';}).join('')+'<div class="avg-block"><span class="avg-lbl">Tempo médio (ativos)</span><span class="avg-val">'+avg+' dias</span></div>';
   var months=[],inC=[],outC=[];
@@ -307,9 +309,9 @@ function openPDF(){var today=new Date().toISOString().split('T')[0],monthAgo=new
 function generatePDF(){
   var start=new Date(document.getElementById('pdfStart').value),end=new Date(document.getElementById('pdfEnd').value);end.setHours(23,59,59);
   var sf=document.getElementById('pdfStatus').value,nameToCol=buildNameToCol();
-  var filtered=ALL_CARDS.filter(function(c){var d=new Date(c.dateLastActivity);if(d<start||d>end)return false;if(sf!=='all'){var idx=nameToCol[(c.listName||'').toLowerCase().trim()];if(idx!==Number(sf))return false;}return true;});
-  var rows=filtered.map(function(c,i){var d=ageDays(c.dateLastActivity),st=d>14?'color:#E60000;font-weight:bold;':d>7?'color:#E6AC00;':'';return'<tr style="'+(i%2===0?'background:#f9f9f9;':'')+'"><td style="padding:6px 10px;border-bottom:1px solid #eee;">'+esc(c.name)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eee;">'+esc(c.cliente||'—')+'</td><td style="padding:6px 10px;border-bottom:1px solid #eee;">'+esc(c.listName||'—')+'</td><td style="padding:6px 10px;border-bottom:1px solid #eee;'+st+'">'+d+' dias</td><td style="padding:6px 10px;border-bottom:1px solid #eee;">'+new Date(c.dateLastActivity).toLocaleDateString('pt-BR')+'</td></tr>';}).join('');
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório Megger Brasil</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#222;margin:0;padding:20px;}.header{display:flex;align-items:center;gap:16px;border-bottom:4px solid #CC0000;padding-bottom:12px;margin-bottom:16px;}.logo{background:#CC0000;color:#fff;font-weight:900;font-size:1.2rem;letter-spacing:3px;padding:6px 16px;border-radius:3px;}.htitle{font-size:1rem;font-weight:700;text-transform:uppercase;}.hsub{font-size:0.75rem;color:#888;}.meta{background:#f5f5f5;padding:10px 14px;border-radius:5px;margin-bottom:16px;font-size:0.78rem;color:#555;}table{width:100%;border-collapse:collapse;}th{background:#CC0000;color:#fff;padding:8px 10px;text-align:left;font-size:0.75rem;}.footer{margin-top:20px;font-size:0.7rem;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:10px;}</style></head><body><div class="header"><div class="logo">MEGGER</div><div><div class="htitle">Relatório de Reparos — Megger Brasil</div><div class="hsub">Laboratório de Reparos · Painel de Controle</div></div></div><div class="meta">Período: <strong>'+start.toLocaleDateString('pt-BR')+' a '+end.toLocaleDateString('pt-BR')+'</strong> · Total: <strong>'+filtered.length+' equipamentos</strong> · Gerado em: '+new Date().toLocaleString('pt-BR')+'</div><table><thead><tr><th>OS / Equipamento</th><th>Cliente</th><th>Status</th><th>Dias parado</th><th>Última atualização</th></tr></thead><tbody>'+rows+'</tbody></table><div class="footer">Megger Brasil — Relatório gerado automaticamente pelo Painel de Controle</div></body></html>';
+  var filtered=ALL_CARDS.filter(function(c){var d=c.dateCreated;if(d<start||d>end)return false;if(sf!=='all'){var idx=nameToCol[(c.listName||'').toLowerCase().trim()];if(idx!==Number(sf))return false;}return true;});
+  var rows=filtered.map(function(c,i){var d=ageDays(c.dateCreated),st=d>14?'color:#E60000;font-weight:bold;':d>7?'color:#E6AC00;':'';return'<tr style="'+(i%2===0?'background:#f9f9f9;':'')+'"><td style="padding:6px 10px;border-bottom:1px solid #eee;">'+esc(c.name)+'</td><td style="padding:6px 10px;border-bottom:1px solid #eee;">'+esc(c.cliente||'—')+'</td><td style="padding:6px 10px;border-bottom:1px solid #eee;">'+esc(c.listName||'—')+'</td><td style="padding:6px 10px;border-bottom:1px solid #eee;'+st+'">'+d+' dias</td><td style="padding:6px 10px;border-bottom:1px solid #eee;">'+c.dateCreated.toLocaleDateString('pt-BR')+'</td></tr>';}).join('');
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório Megger Brasil</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#222;margin:0;padding:20px;}.header{display:flex;align-items:center;gap:16px;border-bottom:4px solid #CC0000;padding-bottom:12px;margin-bottom:16px;}.logo{background:#CC0000;color:#fff;font-weight:900;font-size:1.2rem;letter-spacing:3px;padding:6px 16px;border-radius:3px;}.htitle{font-size:1rem;font-weight:700;text-transform:uppercase;}.hsub{font-size:0.75rem;color:#888;}.meta{background:#f5f5f5;padding:10px 14px;border-radius:5px;margin-bottom:16px;font-size:0.78rem;color:#555;}table{width:100%;border-collapse:collapse;}th{background:#CC0000;color:#fff;padding:8px 10px;text-align:left;font-size:0.75rem;}.footer{margin-top:20px;font-size:0.7rem;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:10px;}</style></head><body><div class="header"><div class="logo">MEGGER</div><div><div class="htitle">Relatório de Reparos — Megger Brasil</div><div class="hsub">Laboratório de Reparos · Painel de Controle</div></div></div><div class="meta">Período: <strong>'+start.toLocaleDateString('pt-BR')+' a '+end.toLocaleDateString('pt-BR')+'</strong> · Total: <strong>'+filtered.length+' equipamentos</strong> · Gerado em: '+new Date().toLocaleString('pt-BR')+'</div><table><thead><tr><th>OS / Equipamento</th><th>Cliente</th><th>Status</th><th>Dias parado</th><th>Data de chegada</th></tr></thead><tbody>'+rows+'</tbody></table><div class="footer">Megger Brasil — Relatório gerado automaticamente pelo Painel de Controle</div></body></html>';
   var w=window.open('','_blank');w.document.write(html);w.document.close();
   document.getElementById('pdfModal').classList.remove('on');
 }
