@@ -199,7 +199,7 @@ footer{height:26px;background:var(--gray-800);border-top:1px solid var(--gray-70
       <div class="a-panel"><div class="a-title">Tempo parado — faixas de atraso</div><div id="delayPanel"></div></div>
     </div>
     <div class="a-row a-row-2">
-      <div class="a-panel"><div class="a-title">Top clientes em aberto</div><div style="position:relative;height:160px;"><canvas id="barChart"></canvas></div></div>
+      <div class="a-panel"><div class="a-title">Equipamentos mais antigos em aberto</div><div id="oldestPanel"></div></div>
       <div class="a-panel"><div class="a-title">Entradas vs saídas — últimos 6 meses</div><div style="position:relative;height:140px;"><canvas id="lineChart"></canvas></div><div style="display:flex;gap:12px;margin-top:6px;"><span style="display:flex;align-items:center;gap:4px;font-size:0.6rem;color:var(--gray-400);"><span style="width:14px;height:2px;background:var(--red);display:inline-block;border-radius:2px;"></span>Entradas</span><span style="display:flex;align-items:center;gap:4px;font-size:0.6rem;color:var(--gray-400);"><span style="width:14px;height:2px;background:var(--green);display:inline-block;border-radius:2px;"></span>Saídas</span></div></div>
     </div>
   </div>
@@ -292,9 +292,8 @@ function renderAnalysis(){
   var sortedEquip=Object.entries(ec).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
   var maxE=sortedEquip.length?sortedEquip[0][1]:1;
   document.getElementById('equipRanking').innerHTML=sortedEquip.length?sortedEquip.map(function(e,i){return'<div class="rank-item"><div class="rank-pos">'+(i<3?medals[i]:(i+1))+'</div><div class="rank-bar-wrap"><div class="rank-name">'+esc(e[0])+'</div><div class="rank-bar-bg"><div class="rank-bar-fill" style="width:'+Math.round(e[1]/maxE*100)+'%;background:'+(i<3?rankColors[i]:'var(--blue)')+'"></div></div></div><div class="rank-count">'+e[1]+'</div></div>';}).join(''):'<div class="empty">Preencha o campo personalizado "Modelo" nos cards</div>';
-  var top5=sorted.slice(0,5);
-  if(barInst)barInst.destroy();
-  barInst=new Chart(document.getElementById('barChart'),{type:'bar',data:{labels:top5.map(function(e){return e[0];}),datasets:[{data:top5.map(function(e){return e[1];}),backgroundColor:top5.map(function(_,i){return i<3?rankColors[i]:'#CC0000';}),borderRadius:3,borderSkipped:false}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#888',font:{size:10}},grid:{color:'#2E2E2E'}},y:{ticks:{color:'#C8C8C8',font:{size:10}},grid:{display:false}}}}});
+  var oldest=active.slice().sort(function(a,b){return ageDays(b.dateCreated)-ageDays(a.dateCreated);}).slice(0,6);
+  document.getElementById('oldestPanel').innerHTML=oldest.length?oldest.map(function(c){var d=ageDays(c.dateCreated),color=d>14?'var(--red-light)':d>7?'var(--yellow)':'var(--green)',meta=[c.cliente,c.modelo].filter(Boolean).join(' · ')||c.listName;return'<div class="rank-item"><div class="rank-bar-wrap"><div class="rank-name">'+esc(c.name)+'</div><div class="card-list" style="margin-top:1px;">'+esc(meta)+'</div></div><div class="rank-count" style="color:'+color+'">'+d+'d</div></div>';}).join(''):'<div class="empty">Nenhum item em aberto</div>';
   var dl=[0,0,0,0];active.forEach(function(c){var d=ageDays(c.dateCreated);if(d===0)dl[0]++;else if(d<=7)dl[1]++;else if(d<=14)dl[2]++;else dl[3]++;});
   var tot=active.length||1,avg=active.length?Math.round(active.reduce(function(s,c){return s+ageDays(c.dateCreated);},0)/active.length):0;
   var defs=[{lbl:'Hoje',count:dl[0],color:'#27AE60'},{lbl:'1 a 7 dias',count:dl[1],color:'#27AE60'},{lbl:'8 a 14 dias',count:dl[2],color:'#E6AC00'},{lbl:'Mais de 14 dias',count:dl[3],color:'#E60000'}];
